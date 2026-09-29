@@ -1,6 +1,7 @@
 -- ============================================================
 --  FK-SNIPER - Script Complet (LocalScript)
 --  A placer dans StarterPlayer > StarterPlayerScripts
+--  + SYSTEME DE KEY (identique a FK_cheat)
 -- ============================================================
 
 -- === SERVICES ===
@@ -40,6 +41,107 @@ local Config = {
 local ESPObjects = {}
 local AimbotFOVVisible = true
 
+----------------------------------------------------
+-- CONFIGURATION DISCORD & KEY SYSTEM
+----------------------------------------------------
+local DISCORD_LINK = "https://discord.gg/fkd9bs3kX"
+local SAVE_FILE_NAME = "FK_Cheat_SavedKey.txt"
+local SECRET_SALT = "FK_MHT_SECRET_KEY_SYSTEM_2026_998811"
+
+-- BASE DE DONNEES LOCALE ADMIN
+local blockedKeys = {}
+
+----------------------------------------------------
+-- LOGIQUE CRYPTOGRAPHIQUE & SYSTEME DE KEY
+----------------------------------------------------
+local function hashString(str)
+	local hash = 5381
+	for i = 1, #str do
+		hash = (bit32 and bit32.bxor(hash * 33, string.byte(str, i))) or ((hash * 33) + string.byte(str, i))
+	end
+	return string.format("%X", math.abs(hash))
+end
+
+local function createKey(durationUnit, durationVal)
+	local randomPart = string.format("%04X%04X", math.random(0, 65535), math.random(0, 65535))
+	local expireTime
+	if durationUnit == "Lifetime" then
+		expireTime = "LIFETIME"
+	else
+		local seconds = 0
+		if durationUnit == "Jours" then
+			seconds = durationVal * 86400
+		elseif durationUnit == "Mois" then
+			seconds = durationVal * 30 * 86400
+		elseif durationUnit == "Années" then
+			seconds = durationVal * 365 * 86400
+		end
+		expireTime = tostring(os.time() + seconds)
+	end
+	local payload = "FK-" .. randomPart .. "-" .. expireTime
+	local sig = hashString(payload .. SECRET_SALT)
+	return payload .. "-" .. sig
+end
+
+local function verifyKey(keyStr)
+	if not keyStr or type(keyStr) ~= "string" then return false, "Clé invalide" end
+	keyStr = keyStr:gsub("%s+", "")
+
+	if blockedKeys[keyStr] then
+		return false, "Clé bloquée par l'Admin"
+	end
+
+	local parts = string.split(keyStr, "-")
+	if #parts ~= 4 or parts[1] ~= "FK" then return false, "Format de clé incorrect" end
+
+	local randomPart = parts[2]
+	local expireStr = parts[3]
+	local sig = parts[4]
+
+	local expectedPayload = "FK-" .. randomPart .. "-" .. expireStr
+	local expectedSig = hashString(expectedPayload .. SECRET_SALT)
+
+	if sig ~= expectedSig then
+		return false, "Clé invalide ou falsifiée"
+	end
+
+	if expireStr == "LIFETIME" then
+		return true, "Lifetime (Infinie)", math.huge
+	end
+
+	local expireTime = tonumber(expireStr)
+	if not expireTime then return false, "Clé corrompue" end
+
+	local now = os.time()
+	local remaining = expireTime - now
+	if remaining <= 0 then
+		return false, "Clé expirée", 0
+	end
+
+	local days = math.floor(remaining / 86400)
+	local hours = math.floor((remaining % 86400) / 3600)
+	local mins = math.floor((remaining % 3600) / 60)
+	local secs = remaining % 60
+
+	local timeFormatted = ""
+	if days > 0 then timeFormatted = timeFormatted .. days .. "j " end
+	if hours > 0 or days > 0 then timeFormatted = timeFormatted .. hours .. "h " end
+	if mins > 0 or hours > 0 or days > 0 then timeFormatted = timeFormatted .. mins .. "m " end
+	timeFormatted = timeFormatted .. secs .. "s"
+
+	return true, timeFormatted, remaining
+end
+
+local function copyToClipboard(text)
+	if setclipboard then
+		setclipboard(text)
+	elseif toclipboard then
+		toclipboard(text)
+	elseif syn and syn.write_clipboard then
+		syn.write_clipboard(text)
+	end
+end
+
 -- ============================================================
 --  CREATION DU GUI (PANEL)
 -- ============================================================
@@ -53,6 +155,398 @@ ScreenGui.Name = "FKSniperGui"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = CoreGui
+
+----------------------------------------------------
+-- FENETRE SYSTEME DE KEY (KEY FRAME)
+----------------------------------------------------
+local keyFrame = Instance.new("Frame")
+keyFrame.Size = UDim2.new(0, 360, 0, 260)
+keyFrame.Position = UDim2.new(0.5, -180, 0.5, -130)
+keyFrame.BackgroundColor3 = Color3.fromRGB(15, 5, 8)
+keyFrame.BorderSizePixel = 0
+keyFrame.Active = true
+keyFrame.Visible = false
+keyFrame.Parent = ScreenGui
+
+local keyCorner = Instance.new("UICorner")
+keyCorner.CornerRadius = UDim.new(0, 10)
+keyCorner.Parent = keyFrame
+
+local keyStroke = Instance.new("UIStroke")
+keyStroke.Color = Color3.fromRGB(255, 0, 60)
+keyStroke.Thickness = 2.5
+keyStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+keyStroke.Parent = keyFrame
+TweenService:Create(keyStroke, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+	Color = Color3.fromRGB(255, 80, 100),
+	Thickness = 3.5
+}):Play()
+
+local keyTitle = Instance.new("TextLabel")
+keyTitle.Size = UDim2.new(1, 0, 0, 40)
+keyTitle.BackgroundTransparency = 1
+keyTitle.Text = "FK-SNIPER by elias — Key System"
+keyTitle.TextColor3 = Color3.fromRGB(255, 50, 80)
+keyTitle.TextSize = 16
+keyTitle.Font = Enum.Font.SourceSansBold
+keyTitle.Parent = keyFrame
+
+local keyInputBox = Instance.new("TextBox")
+keyInputBox.Size = UDim2.new(0.85, 0, 0, 35)
+keyInputBox.Position = UDim2.new(0.075, 0, 0.22, 0)
+keyInputBox.BackgroundColor3 = Color3.fromRGB(25, 8, 12)
+keyInputBox.PlaceholderText = "Mettez votre key ici..."
+keyInputBox.PlaceholderColor3 = Color3.fromRGB(150, 80, 90)
+keyInputBox.Text = ""
+keyInputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+keyInputBox.Font = Enum.Font.SourceSansBold
+keyInputBox.TextSize = 13
+keyInputBox.Parent = keyFrame
+
+local keyInputCorner = Instance.new("UICorner")
+keyInputCorner.CornerRadius = UDim.new(0, 6)
+keyInputCorner.Parent = keyInputBox
+
+local keyInputStroke = Instance.new("UIStroke")
+keyInputStroke.Color = Color3.fromRGB(180, 0, 40)
+keyInputStroke.Thickness = 1
+keyInputStroke.Parent = keyInputBox
+
+local validateKeyBtn = Instance.new("TextButton")
+validateKeyBtn.Size = UDim2.new(0.85, 0, 0, 35)
+validateKeyBtn.Position = UDim2.new(0.075, 0, 0.42, 0)
+validateKeyBtn.BackgroundColor3 = Color3.fromRGB(120, 10, 30)
+validateKeyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+validateKeyBtn.Text = "Valider la key"
+validateKeyBtn.Font = Enum.Font.SourceSansBold
+validateKeyBtn.TextSize = 14
+validateKeyBtn.Parent = keyFrame
+
+local validateCorner = Instance.new("UICorner")
+validateCorner.CornerRadius = UDim.new(0, 6)
+validateCorner.Parent = validateKeyBtn
+
+local validateStroke = Instance.new("UIStroke")
+validateStroke.Color = Color3.fromRGB(255, 0, 60)
+validateStroke.Thickness = 1
+validateStroke.Parent = validateKeyBtn
+
+local getDiscordBtn = Instance.new("TextButton")
+getDiscordBtn.Size = UDim2.new(0.85, 0, 0, 35)
+getDiscordBtn.Position = UDim2.new(0.075, 0, 0.60, 0)
+getDiscordBtn.BackgroundColor3 = Color3.fromRGB(35, 10, 20)
+getDiscordBtn.TextColor3 = Color3.fromRGB(255, 100, 120)
+getDiscordBtn.Text = "Avoir une key (Discord)"
+getDiscordBtn.Font = Enum.Font.SourceSansBold
+getDiscordBtn.TextSize = 14
+getDiscordBtn.Parent = keyFrame
+
+local getDiscordCorner = Instance.new("UICorner")
+getDiscordCorner.CornerRadius = UDim.new(0, 6)
+getDiscordCorner.Parent = getDiscordBtn
+
+local getDiscordStroke = Instance.new("UIStroke")
+getDiscordStroke.Color = Color3.fromRGB(200, 0, 50)
+getDiscordStroke.Thickness = 1
+getDiscordStroke.Parent = getDiscordBtn
+
+local keyStatusLabel = Instance.new("TextLabel")
+keyStatusLabel.Size = UDim2.new(1, 0, 0, 25)
+keyStatusLabel.Position = UDim2.new(0, 0, 0.82, 0)
+keyStatusLabel.BackgroundTransparency = 1
+keyStatusLabel.Text = ""
+keyStatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+keyStatusLabel.TextSize = 12
+keyStatusLabel.Font = Enum.Font.SourceSans
+keyStatusLabel.Parent = keyFrame
+
+----------------------------------------------------
+-- MENU ADMIN F3 — PANNEAU GENERATEUR DE CLES
+----------------------------------------------------
+local adminPinFrame = Instance.new("Frame")
+adminPinFrame.Size = UDim2.new(0, 280, 0, 160)
+adminPinFrame.Position = UDim2.new(0.5, -140, 0.5, -80)
+adminPinFrame.BackgroundColor3 = Color3.fromRGB(15, 5, 8)
+adminPinFrame.BorderSizePixel = 0
+adminPinFrame.Visible = false
+adminPinFrame.Parent = ScreenGui
+Instance.new("UICorner", adminPinFrame).CornerRadius = UDim.new(0, 10)
+
+local pinStroke = Instance.new("UIStroke")
+pinStroke.Color = Color3.fromRGB(255, 180, 0)
+pinStroke.Thickness = 2
+pinStroke.Parent = adminPinFrame
+
+local pinTitle = Instance.new("TextLabel")
+pinTitle.Size = UDim2.new(1, 0, 0, 35)
+pinTitle.BackgroundTransparency = 1
+pinTitle.Text = "Accès Admin (Code PIN)"
+pinTitle.TextColor3 = Color3.fromRGB(255, 180, 0)
+pinTitle.TextSize = 15
+pinTitle.Font = Enum.Font.SourceSansBold
+pinTitle.Parent = adminPinFrame
+
+local pinBox = Instance.new("TextBox")
+pinBox.Size = UDim2.new(0.8, 0, 0, 30)
+pinBox.Position = UDim2.new(0.1, 0, 0.32, 0)
+pinBox.BackgroundColor3 = Color3.fromRGB(25, 8, 12)
+pinBox.PlaceholderText = "Entrez le code..."
+pinBox.Text = ""
+pinBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+pinBox.Font = Enum.Font.SourceSansBold
+pinBox.TextSize = 14
+pinBox.Parent = adminPinFrame
+
+local pinBoxStroke = Instance.new("UIStroke")
+pinBoxStroke.Color = Color3.fromRGB(255, 180, 0)
+pinBoxStroke.Thickness = 1
+pinBoxStroke.Parent = pinBox
+
+local validatePinBtn = Instance.new("TextButton")
+validatePinBtn.Size = UDim2.new(0.8, 0, 0, 30)
+validatePinBtn.Position = UDim2.new(0.1, 0, 0.65, 0)
+validatePinBtn.BackgroundColor3 = Color3.fromRGB(150, 100, 0)
+validatePinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+validatePinBtn.Text = "Valider PIN"
+validatePinBtn.Font = Enum.Font.SourceSansBold
+validatePinBtn.TextSize = 13
+validatePinBtn.Parent = adminPinFrame
+
+-- Grand Panneau Generateur
+local adminGenFrame = Instance.new("Frame")
+adminGenFrame.Size = UDim2.new(0, 650, 0, 480)
+adminGenFrame.Position = UDim2.new(0.5, -325, 0.5, -240)
+adminGenFrame.BackgroundColor3 = Color3.fromRGB(15, 5, 8)
+adminGenFrame.BorderSizePixel = 0
+adminGenFrame.Active = true
+adminGenFrame.Visible = false
+adminGenFrame.Parent = ScreenGui
+Instance.new("UICorner", adminGenFrame).CornerRadius = UDim.new(0, 10)
+
+local genStroke = Instance.new("UIStroke")
+genStroke.Color = Color3.fromRGB(255, 180, 0)
+genStroke.Thickness = 2
+genStroke.Parent = adminGenFrame
+
+local genTitle = Instance.new("TextLabel")
+genTitle.Size = UDim2.new(1, 0, 0, 35)
+genTitle.BackgroundTransparency = 1
+genTitle.Text = "Dashboard Administrateur — Gestion des Clés"
+genTitle.TextColor3 = Color3.fromRGB(255, 180, 0)
+genTitle.TextSize = 18
+genTitle.Font = Enum.Font.SourceSansBold
+genTitle.Parent = adminGenFrame
+
+-- Section Creation Haut
+local topGenSection = Instance.new("Frame")
+topGenSection.Size = UDim2.new(0.94, 0, 0, 100)
+topGenSection.Position = UDim2.new(0.03, 0, 0.08, 0)
+topGenSection.BackgroundColor3 = Color3.fromRGB(25, 8, 12)
+topGenSection.Parent = adminGenFrame
+Instance.new("UICorner", topGenSection).CornerRadius = UDim.new(0, 8)
+
+local topGenStroke = Instance.new("UIStroke")
+topGenStroke.Color = Color3.fromRGB(200, 150, 0)
+topGenStroke.Thickness = 1
+topGenStroke.Parent = topGenSection
+
+local qtyBox = Instance.new("TextBox")
+qtyBox.Size = UDim2.new(0.15, 0, 0, 30)
+qtyBox.Position = UDim2.new(0.02, 0, 0.15, 0)
+qtyBox.BackgroundColor3 = Color3.fromRGB(35, 12, 18)
+qtyBox.Text = "1"
+qtyBox.PlaceholderText = "Nb"
+qtyBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+qtyBox.Font = Enum.Font.SourceSansBold
+qtyBox.TextSize = 14
+qtyBox.Parent = topGenSection
+Instance.new("UICorner", qtyBox).CornerRadius = UDim.new(0, 4)
+
+local valBox = Instance.new("TextBox")
+valBox.Size = UDim2.new(0.15, 0, 0, 30)
+valBox.Position = UDim2.new(0.19, 0, 0.15, 0)
+valBox.BackgroundColor3 = Color3.fromRGB(35, 12, 18)
+valBox.Text = "1"
+valBox.PlaceholderText = "Durée"
+valBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+valBox.Font = Enum.Font.SourceSansBold
+valBox.TextSize = 14
+valBox.Parent = topGenSection
+Instance.new("UICorner", valBox).CornerRadius = UDim.new(0, 4)
+
+local selectedUnit = "Jours"
+local unitButtons = {}
+
+local function createAdminUnitBtn(xPos, name)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0.14, 0, 0, 30)
+	btn.Position = UDim2.new(xPos, 0, 0.15, 0)
+	btn.BackgroundColor3 = (selectedUnit == name) and Color3.fromRGB(200, 120, 0) or Color3.fromRGB(45, 15, 20)
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Text = name
+	btn.Font = Enum.Font.SourceSansBold
+	btn.TextSize = 12
+	btn.Parent = topGenSection
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+
+	unitButtons[name] = btn
+	btn.MouseButton1Click:Connect(function()
+		selectedUnit = name
+		for uName, uBtn in pairs(unitButtons) do
+			uBtn.BackgroundColor3 = (uName == selectedUnit) and Color3.fromRGB(200, 120, 0) or Color3.fromRGB(45, 15, 20)
+		end
+		if name == "Lifetime" then
+			valBox.Visible = false
+		else
+			valBox.Visible = true
+		end
+	end)
+end
+
+createAdminUnitBtn(0.36, "Jours")
+createAdminUnitBtn(0.52, "Mois")
+createAdminUnitBtn(0.68, "Années")
+createAdminUnitBtn(0.84, "Lifetime")
+
+local generateBtn = Instance.new("TextButton")
+generateBtn.Size = UDim2.new(0.96, 0, 0, 35)
+generateBtn.Position = UDim2.new(0.02, 0, 0.55, 0)
+generateBtn.BackgroundColor3 = Color3.fromRGB(180, 100, 0)
+generateBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+generateBtn.Text = "Générer les Clés"
+generateBtn.Font = Enum.Font.SourceSansBold
+generateBtn.TextSize = 15
+generateBtn.Parent = topGenSection
+Instance.new("UICorner", generateBtn).CornerRadius = UDim.new(0, 4)
+
+-- Liste Deroulante des Cles
+local keysListScroll = Instance.new("ScrollingFrame")
+keysListScroll.Size = UDim2.new(0.94, 0, 0, 310)
+keysListScroll.Position = UDim2.new(0.03, 0, 0.32, 0)
+keysListScroll.BackgroundColor3 = Color3.fromRGB(20, 6, 10)
+keysListScroll.ScrollBarImageColor3 = Color3.fromRGB(255, 180, 0)
+keysListScroll.ScrollBarThickness = 6
+keysListScroll.Parent = adminGenFrame
+Instance.new("UICorner", keysListScroll).CornerRadius = UDim.new(0, 8)
+
+local uiListLayout = Instance.new("UIListLayout")
+uiListLayout.Parent = keysListScroll
+uiListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+uiListLayout.Padding = UDim.new(0, 5)
+
+-- Fonction d'ajout d'une ligne de cle
+local function addKeyToPanel(keyString, durationLabel)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, -10, 0, 40)
+	row.BackgroundColor3 = Color3.fromRGB(30, 10, 15)
+	row.Parent = keysListScroll
+	Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+
+	local kLabel = Instance.new("TextBox")
+	kLabel.Size = UDim2.new(0.55, 0, 1, 0)
+	kLabel.Position = UDim2.new(0.02, 0, 0, 0)
+	kLabel.BackgroundTransparency = 1
+	kLabel.Text = keyString
+	kLabel.TextColor3 = Color3.fromRGB(0, 220, 255)
+	kLabel.Font = Enum.Font.Code
+	kLabel.TextSize = 12
+	kLabel.TextXAlignment = Enum.TextXAlignment.Left
+	kLabel.ClearTextOnFocus = false
+	kLabel.TextEditable = false
+	kLabel.Parent = row
+
+	local durLabel = Instance.new("TextLabel")
+	durLabel.Size = UDim2.new(0.1, 0, 1, 0)
+	durLabel.Position = UDim2.new(0.58, 0, 0, 0)
+	durLabel.BackgroundTransparency = 1
+	durLabel.Text = durationLabel
+	durLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+	durLabel.Font = Enum.Font.SourceSansBold
+	durLabel.TextSize = 12
+	durLabel.Parent = row
+
+	local copyBtn = Instance.new("TextButton")
+	copyBtn.Size = UDim2.new(0.1, 0, 0, 26)
+	copyBtn.Position = UDim2.new(0.69, 0, 0.15, 0)
+	copyBtn.BackgroundColor3 = Color3.fromRGB(40, 100, 200)
+	copyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	copyBtn.Text = "Copier"
+	copyBtn.Font = Enum.Font.SourceSansBold
+	copyBtn.TextSize = 11
+	copyBtn.Parent = row
+	Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0, 4)
+
+	local blockBtn = Instance.new("TextButton")
+	blockBtn.Size = UDim2.new(0.09, 0, 0, 26)
+	blockBtn.Position = UDim2.new(0.80, 0, 0.15, 0)
+	blockBtn.BackgroundColor3 = Color3.fromRGB(150, 150, 0)
+	blockBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	blockBtn.Text = "Bloquer"
+	blockBtn.Font = Enum.Font.SourceSansBold
+	blockBtn.TextSize = 11
+	blockBtn.Parent = row
+	Instance.new("UICorner", blockBtn).CornerRadius = UDim.new(0, 4)
+
+	local delBtn = Instance.new("TextButton")
+	delBtn.Size = UDim2.new(0.09, 0, 0, 26)
+	delBtn.Position = UDim2.new(0.90, 0, 0.15, 0)
+	delBtn.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
+	delBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	delBtn.Text = "Suppr."
+	delBtn.Font = Enum.Font.SourceSansBold
+	delBtn.TextSize = 11
+	delBtn.Parent = row
+	Instance.new("UICorner", delBtn).CornerRadius = UDim.new(0, 4)
+
+	copyBtn.MouseButton1Click:Connect(function()
+		copyToClipboard(keyString)
+		copyBtn.Text = "Fait!"
+		task.delay(1, function() copyBtn.Text = "Copier" end)
+	end)
+
+	blockBtn.MouseButton1Click:Connect(function()
+		if blockedKeys[keyString] then
+			blockedKeys[keyString] = false
+			blockBtn.BackgroundColor3 = Color3.fromRGB(150, 150, 0)
+			blockBtn.Text = "Bloquer"
+			kLabel.TextColor3 = Color3.fromRGB(0, 220, 255)
+		else
+			blockedKeys[keyString] = true
+			blockBtn.BackgroundColor3 = Color3.fromRGB(100, 30, 30)
+			blockBtn.Text = "Débloq."
+			kLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+		end
+	end)
+
+	delBtn.MouseButton1Click:Connect(function()
+		blockedKeys[keyString] = true
+		row:Destroy()
+	end)
+
+	keysListScroll.CanvasSize = UDim2.new(0, 0, 0, uiListLayout.AbsoluteContentSize.Y + 10)
+end
+
+generateBtn.MouseButton1Click:Connect(function()
+	local qty = tonumber(qtyBox.Text) or 1
+	local val = tonumber(valBox.Text) or 1
+
+	for i = 1, qty do
+		local newKey = createKey(selectedUnit, val)
+		local durText = selectedUnit == "Lifetime" and "À vie" or (val .. " " .. selectedUnit)
+		addKeyToPanel(newKey, durText)
+	end
+end)
+
+validatePinBtn.MouseButton1Click:Connect(function()
+	if pinBox.Text == "1455" then
+		adminPinFrame.Visible = false
+		adminGenFrame.Visible = true
+		pinBox.Text = ""
+	else
+		pinTitle.Text = "PIN Incorrect !"
+		task.delay(1.5, function() pinTitle.Text = "Accès Admin (Code PIN)" end)
+	end
+end)
 
 -- --- Panel principal ---
 local MainFrame = Instance.new("Frame")
@@ -451,25 +945,41 @@ local BONE_CONNECTIONS = {
 --  ESP (Drawing API)
 -- ============================================================
 
+-- ============================================================
+--  FIX ANTI-FLASH : on n'ecrit une propriete d'un objet Drawing
+--  QUE si la valeur change vraiment. Ecrire Visible=true 60 fois
+--  par seconde fait clignoter les drawings sur beaucoup
+--  d'executeurs (c'etait la cause du flash toutes les 0.5s).
+-- ============================================================
+local function setProp(obj, prop, value)
+    if obj and obj[prop] ~= value then
+        obj[prop] = value
+    end
+end
+
+local function setLine(line, from, to, color, thickness)
+    if not line then return end
+    setProp(line, "From", from)
+    setProp(line, "To", to)
+    setProp(line, "Color", color)
+    setProp(line, "Thickness", thickness)
+end
+
 local function HideAllObjects(objs)
-    for _, obj in ipairs(objs) do
-        if obj and obj.Visible ~= nil and typeof(obj) ~= "table" then
-            obj.Visible = false
-        end
+    if objs.healthBar then
+        setProp(objs.healthBar, "Visible", false)
     end
     if objs.skeleton then
         for _, line in ipairs(objs.skeleton) do
-            line.Visible = false
+            setProp(line, "Visible", false)
         end
     end
 end
 
 local function ClearESPForPlayer(player)
     if ESPObjects[player] then
-        for _, obj in ipairs(ESPObjects[player]) do
-            if obj and obj.Remove then
-                obj:Remove()
-            end
+        if ESPObjects[player].healthBar and ESPObjects[player].healthBar.Remove then
+            ESPObjects[player].healthBar:Remove()
         end
         if ESPObjects[player].skeleton then
             for _, line in ipairs(ESPObjects[player].skeleton) do
@@ -480,48 +990,21 @@ local function ClearESPForPlayer(player)
     end
 end
 
+-- Declarations anticipees (doivent exister AVANT CreateESPForPlayer)
+local deadCharacters = {}
+local watchCharacterDeath -- defini plus bas, apres HideAllObjects
+
 local function CreateESPForPlayer(player)
+    -- ESP SIMPLIFIE : uniquement la barre de vie + le squelette.
+    -- (Box, tracer, nom et distance : SUPPRIMES totalement)
     ESPObjects[player] = {}
-
-    -- Box ESP (Quad)
-    local box = Drawing.new("Quad")
-    box.Thickness = Config.ESPThickness
-    box.Color = Config.ESPColor
-    box.Filled = false
-    box.Visible = false
-    table.insert(ESPObjects[player], box)
-
-    -- Tracer
-    local tracer = Drawing.new("Line")
-    tracer.Thickness = Config.ESPThickness
-    tracer.Color = Config.ESPColor
-    tracer.Visible = false
-    table.insert(ESPObjects[player], tracer)
-
-    -- Name
-    local nameText = Drawing.new("Text")
-    nameText.Size = 14
-    nameText.Center = true
-    nameText.Outline = true
-    nameText.Color = Config.ESPColor
-    nameText.Visible = false
-    table.insert(ESPObjects[player], nameText)
-
-    -- Distance
-    local distText = Drawing.new("Text")
-    distText.Size = 12
-    distText.Center = true
-    distText.Outline = true
-    distText.Color = Color3.fromRGB(255, 255, 255)
-    distText.Visible = false
-    table.insert(ESPObjects[player], distText)
 
     -- Health bar
     local healthBar = Drawing.new("Line")
     healthBar.Thickness = 3
     healthBar.Color = Color3.fromRGB(0, 255, 0)
     healthBar.Visible = false
-    table.insert(ESPObjects[player], healthBar)
+    ESPObjects[player].healthBar = healthBar
 
     -- Skeleton lines
     local skeleton = {}
@@ -534,27 +1017,60 @@ local function CreateESPForPlayer(player)
     end
     ESPObjects[player].skeleton = skeleton
 
-    player.CharacterAdded:Connect(function()
-        ClearESPForPlayer(player)
-        CreateESPForPlayer(player)
+    -- FIX ANTI-RESET + ANTI-CADAVRE : on ne detruit JAMAIS les objets
+    -- Drawing quand le perso respawn, on les cache juste. Et on
+    -- surveille Humanoid.Died pour marquer les cadavres comme morts.
+    if player.Character then
+        watchCharacterDeath(player, player.Character)
+    end
+    player.CharacterAdded:Connect(function(newChar)
+        -- nettoie les vieux cadavres marques et surveille le nouveau perso
+        for oldChar, _ in pairs(deadCharacters) do
+            if not oldChar or not oldChar:IsDescendantOf(Workspace) then
+                deadCharacters[oldChar] = nil
+            end
+        end
+        local newHum = newChar:WaitForChild("Humanoid", 5)
+        if newHum then
+            deadCharacters[newChar] = nil
+            watchCharacterDeath(player, newChar)
+        end
     end)
     player.CharacterRemoving:Connect(function()
-        ClearESPForPlayer(player)
+        HideAllObjects(ESPObjects[player])
     end)
 end
 
 -- Verifier si un personnage est valide et VIVANT
-local function IsCharacterValid(player)
-    if not player or not player.Character then return false end
+-- FIX : certains jeux ne mettent pas le Humanoid.Health a 0 en mourant
+-- (ragdoll custom, etc.), donc on hook Humanoid.Died directement :
+-- des que le perso meurt, on memorise son character comme "mort" et
+-- on cache son ESP jusqu'a son respawn.
+local function IsCharacterValid(player)    if not player or not player.Character then return false end
     local char = player.Character
+    if deadCharacters[char] then return false end
+    if not char:IsDescendantOf(Workspace) then return false end
     local hrp = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChild("Humanoid")
+    local hum = char:FindFirstChildOfClass("Humanoid")
     if not hrp or not hum then return false end
     -- IMPORTANT : si le Humanoid est mort, on ne l'affiche pas
     if hum.Health <= 0 then return false end
     -- Si le character va etre supprime (BreakJoints deja appele)
     if hum:GetState() == Enum.HumanoidStateType.Dead then return false end
     return true
+end
+
+-- Surveille la mort de chaque perso et marque les cadavres
+watchCharacterDeath = function(player, char)
+    local hum = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid", 5)
+    if hum then
+        hum.Died:Connect(function()
+            deadCharacters[char] = true
+            if ESPObjects[player] then
+                HideAllObjects(ESPObjects[player])
+            end
+        end)
+    end
 end
 
 local function UpdateESP()
@@ -584,60 +1100,22 @@ local function UpdateESP()
         end
 
         if onScreen then
-            -- === BOX ESP ===
+            -- === GEOMETRIE (utilisee uniquement pour la barre de vie) ===
             local headPos = char:FindFirstChild("Head")
             local headY = headPos and Camera:WorldToViewportPoint(headPos.Position).Y or screenPos.Y - 50
             local legY = Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0)).Y
 
             local boxHeight = math.abs(headY - legY)
-            local boxWidth = boxHeight * 0.5
             local boxX = screenPos.X
             local boxY = headY
-
-            objs[1].PointA = Vector2.new(boxX - boxWidth / 2, boxY)
-            objs[1].PointB = Vector2.new(boxX + boxWidth / 2, boxY)
-            objs[1].PointC = Vector2.new(boxX + boxWidth / 2, boxY + boxHeight)
-            objs[1].PointD = Vector2.new(boxX - boxWidth / 2, boxY + boxHeight)
-            objs[1].Visible = true
-            objs[1].Color = Config.ESPColor
-            objs[1].Thickness = Config.ESPThickness
-
-            -- === TRACER ===
-            objs[2].From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-            objs[2].To = Vector2.new(boxX, boxY + boxHeight)
-            objs[2].Visible = true
-            objs[2].Color = Config.ESPColor
-            objs[2].Thickness = Config.ESPThickness
-
-            -- === NAME ===
-            if Config.ESPShowName then
-                objs[3].Text = player.Name
-                objs[3].Position = Vector2.new(boxX, boxY - 15)
-                objs[3].Color = Config.ESPColor
-                objs[3].Visible = true
-            else
-                objs[3].Visible = false
-            end
-
-            -- === DISTANCE ===
-            if Config.ESPShowDistance then
-                local dist = math.floor((Camera.CFrame.Position - hrp.Position).Magnitude)
-                objs[4].Text = dist .. "m"
-                objs[4].Position = Vector2.new(boxX, boxY + boxHeight + 5)
-                objs[4].Visible = true
-            else
-                objs[4].Visible = false
-            end
 
             -- === HEALTH BAR ===
             if Config.ESPShowHealth and humanoid then
                 local healthPct = math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
-                objs[5].From = Vector2.new(boxX - boxWidth / 2 - 5, boxY + boxHeight)
-                objs[5].To = Vector2.new(boxX - boxWidth / 2 - 5, boxY + boxHeight - boxHeight * healthPct)
-                objs[5].Color = Color3.fromRGB(255 - 255 * healthPct, 255 * healthPct, 0)
-                objs[5].Visible = true
+                setLine(objs.healthBar, Vector2.new(boxX - 15, boxY + boxHeight), Vector2.new(boxX - 15, boxY + boxHeight - boxHeight * healthPct), Color3.fromRGB(255 - 255 * healthPct, 255 * healthPct, 0), 3)
+                setProp(objs.healthBar, "Visible", true)
             else
-                objs[5].Visible = false
+                setProp(objs.healthBar, "Visible", false)
             end
 
             -- === SKELETON ESP ===
@@ -650,22 +1128,19 @@ local function UpdateESP()
                         local posA, onA = Camera:WorldToViewportPoint(partA.Position)
                         local posB, onB = Camera:WorldToViewportPoint(partB.Position)
                         if onA and onB then
-                            line.From = Vector2.new(posA.X, posA.Y)
-                            line.To = Vector2.new(posB.X, posB.Y)
-                            line.Color = Config.ESPColor
-                            line.Thickness = Config.ESPThickness
-                            line.Visible = true
+                            setLine(line, Vector2.new(posA.X, posA.Y), Vector2.new(posB.X, posB.Y), Config.ESPColor, Config.ESPThickness)
+                            setProp(line, "Visible", true)
                         else
-                            line.Visible = false
+                            setProp(line, "Visible", false)
                         end
                     else
-                        if line then line.Visible = false end
+                        setProp(line, "Visible", false)
                     end
                 end
             else
                 if objs.skeleton then
                     for _, line in ipairs(objs.skeleton) do
-                        line.Visible = false
+                        setProp(line, "Visible", false)
                     end
                 end
             end
@@ -769,14 +1244,92 @@ CloseBtn.MouseButton1Click:Connect(function()
     MainFrame.Visible = false
 end)
 
+----------------------------------------------------
+-- LOGIQUE DE VALIDATION ET SAUVEGARDE DE LA KEY
+----------------------------------------------------
+local currentValidKey = nil
+
+local function loadCheatWithKey(keyStr)
+	local isValid, formattedTime = verifyKey(keyStr)
+	if isValid then
+		currentValidKey = keyStr
+		pcall(function()
+			if writefile then writefile(SAVE_FILE_NAME, keyStr) end
+		end)
+		keyFrame.Visible = false
+		MainFrame.Visible = true
+		Config.MenuOpen = true
+		return true
+	end
+	return false, formattedTime
+end
+
+validateKeyBtn.MouseButton1Click:Connect(function()
+	local inputKey = keyInputBox.Text
+	local ok, msg = loadCheatWithKey(inputKey)
+	if not ok then
+		keyStatusLabel.Text = msg or "Clé invalide !"
+		keyStatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+	end
+end)
+
+getDiscordBtn.MouseButton1Click:Connect(function()
+	copyToClipboard(DISCORD_LINK)
+	keyStatusLabel.Text = "Lien Discord copié ! (discord.gg/fkd9bs3kX)"
+	keyStatusLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
+end)
+
+task.spawn(function()
+	local success, savedKey = pcall(function()
+		if readfile and isfile and isfile(SAVE_FILE_NAME) then
+			return readfile(SAVE_FILE_NAME)
+		end
+		return nil
+	end)
+
+	if success and savedKey and savedKey ~= "" then
+		keyInputBox.Text = savedKey
+	end
+	keyFrame.Visible = true
+end)
+
+task.spawn(function()
+	while true do
+		task.wait(1)
+		if currentValidKey then
+			local isValid, formattedTime = verifyKey(currentValidKey)
+			if isValid then
+				-- Clé toujours active
+			else
+				currentValidKey = nil
+				MainFrame.Visible = false
+				Config.MenuOpen = false
+				keyFrame.Visible = true
+				keyStatusLabel.Text = "Votre clé a expiré ou a été bloquée !"
+				keyStatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+			end
+		end
+	end
+end)
+
 -- ============================================================
 --  TOUCHE POUR OUVRIR / FERMER LE MENU (Ctrl Droit)
 -- ============================================================
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if input.KeyCode == Config.MenuToggleKey then
-        Config.MenuOpen = not Config.MenuOpen
-        MainFrame.Visible = Config.MenuOpen
+        if currentValidKey then
+            Config.MenuOpen = not Config.MenuOpen
+            MainFrame.Visible = Config.MenuOpen
+        end
+    end
+    if input.KeyCode == Enum.KeyCode.F3 then
+        if adminPinFrame.Visible or adminGenFrame.Visible then
+            adminPinFrame.Visible = false
+            adminGenFrame.Visible = false
+        else
+            adminPinFrame.Visible = true
+        end
     end
 end)
 
@@ -799,7 +1352,6 @@ end)
 
 -- ============================================================
 --  FORCAGE FOV (BindToRenderStep priorite tres haute)
---  On force APRES le script camera de Roblox pour ecraser sa valeur
 -- ============================================================
 
 RunService:BindToRenderStep("FKSniperFOV", Enum.RenderPriority.Camera.Value + 2, function()
@@ -818,4 +1370,4 @@ Players.PlayerRemoving:Connect(function(player)
     ClearESPForPlayer(player)
 end)
 
-print("FK-SNIPER charge ! Appuie sur Ctrl Droit pour ouvrir le menu.")
+print("FK-SNIPER charge ! Valide ta key puis appuie sur Ctrl Droit pour ouvrir le menu. Admin : F3.")
